@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HUD Nav1 – Web-App</title>
+<title>HUD Nav – Web-App</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 body{font-family:system-ui,sans-serif;margin:12px;max-width:900px}
@@ -66,7 +66,12 @@ input,select,button{padding:8px;font-size:15px}
 </div>
 </div>
 
-<div class="card"><h3>Log</h3><div id="log"></div></div>
+<div class="card"><h3>Log</h3>
+<div class="row">
+<button id="logBtn" onclick="toggleLog()">Live-Logs: an</button>
+<button onclick="clearLog()">Leeren</button>
+</div>
+<div id="log"></div></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -81,7 +86,18 @@ var watchId = null, sendTimer = null, hbTimer = null;
 var lastPos = null, lastPosTime = 0;
 var curSpeedKph = 0, curLimit = 50, lastNextKey = '', lastOverpass = 0;
 
-function log(t){var el=document.getElementById('log');el.textContent+=(new Date().toLocaleTimeString())+' '+t+'\n';el.scrollTop=el.scrollHeight;}
+var liveLog=true, skippedLog=0;
+function toggleLog(){liveLog=!liveLog;document.getElementById('logBtn').textContent='Live-Logs: '+(liveLog?'an':'aus');if(liveLog&&skippedLog>0){skippedLog=0;log('... weiter');}}
+function clearLog(){document.getElementById('log').textContent='';skippedLog=0;}
+function log(t){
+  if(!liveLog){skippedLog++;return;}
+  var el=document.getElementById('log');
+  el.textContent+=(new Date().toLocaleTimeString())+' '+t+'\n';
+  // Deckel: nur letzte ~200 Zeilen behalten, DOM bleibt klein.
+  var lines=el.textContent.split('\n');
+  if(lines.length>201)el.textContent=lines.slice(lines.length-201).join('\n');
+  el.scrollTop=el.scrollHeight;
+}
 var bleDev=null, bleChar=null, sendQ=null;
 var SERVICE_UUID='c6372234-79d6-4a5e-8a57-08a3b7a8a7d1';
 var CHAR_UUID='f6c8d747-fc2c-4ef4-906a-7c8cbf552814';
