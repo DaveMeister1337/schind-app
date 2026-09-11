@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HUD Nav – Web-App</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+body{font-family:system-ui,sans-serif;margin:12px;max-width:900px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+input,select,button{padding:8px;font-size:15px}
+#map{height:320px;margin:8px 0}
+#log{background:#111;color:#0f0;padding:8px;min-height:100px;white-space:pre-wrap;font-size:12px}
+.card{border:1px solid #ccc;border-radius:8px;padding:10px;margin:8px 0}
+.big{font-size:22px;font-weight:bold}
+</style>
+</head>
+<body>
+<h2>HUD Nav – Web-App (SteedPilot-JSON via Bluetooth)</h2>
+
+<div class="card">
+<h3>1. ESP per Bluetooth verbinden</h3>
+<div class="row">
+<button onclick="bleConnect()">Verbinden (SteedPilot)</button>
+<button onclick="bleDisconnect()">Trennen</button>
+<span id="espSt">getrennt</span>
+</div>
+<div class="row"><small>Desktop/Android: Chrome oder Edge. iPhone: <b>Bluefy-Browser</b> (Safari kann kein WebBluetooth). Datei per HTTPS hosten (z. B. GitHub Pages), dann Bluetooth + GPS freigeben. Alternativ: nRF Connect App (manuell) oder SteedPilot-App (Mac/Xcode-Build).</small></div>
+</div>
+
+<div class="card">
+<h3>2. GPX-Route laden (vom PC)</h3>
+<div class="row">
+<input id="gpxFile" type="file" accept=".gpx">
+<button onclick="clearGpx()">Löschen</button>
+<span id="gpxInfo">keine Route</span>
+</div>
+<div id="map"></div>
+</div>
+
+<div class="card">
+<h3>3. Navigation</h3>
+<div class="row">
+<button onclick="startNav()">Start (GPS)</button>
+<button onclick="stopNav()">Stopp</button>
+<label><input id="autoLimit" type="checkbox" checked> Speed-Limit auto (Overpass)</label>
+<input id="manLimit" type="number" value="50" min="0" max="200" style="width:80px"> Limit manuell
+</div>
+<div class="row">
+<div>Nächster: <span class="big" id="nMan">–</span></div>
+<div>Distanz: <span class="big" id="nDist">–</span></div>
+<div>Speed: <span class="big" id="nSpd">–</span> km/h</div>
+<div>Limit: <span class="big" id="nLim">–</span></div>
+</div>
+</div>
+
+<div class="card">
+<h3>4. Demo (ohne GPS)</h3>
+<div class="row">
+<button onclick="sendHb()">Heartbeat</button>
+<button onclick="sendDemo('turnLeft',180,45,50)">Links 180 m</button>
+<button onclick="sendDemo('turnRight',120,42,50)">Rechts 120 m</button>
+<button onclick="sendDemo('roundabout',260,35,50)">Kreisverkehr</button>
+<button onclick="sendDemo('uTurn',90,15,30)">U-Turn</button>
+<button onclick="sendDemo('arrive',0,0,50)">Ankunft</button>
+</div>
+</div>
+
+<div class="card"><h3>Log</h3><div id="log"></div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map = L.map('map').setView([51.16, 10.45], 6);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+var trackLayer = null, posMarker = null, turnMarker = null;
+
+var track = [];      // {lat,lon}
+var cum = [];        // kumulierte Meter
+var turns = [];      // {idx,man,deg}
+var watchId = null, sendTimer = null, hbTimer = null;
+var lastPos = null, lastPosTime = 0;
+var curSpeedKph = 0, curLimit = 50, lastNextKey = '', lastOverpass = 0;
+
+function log(t){var el=document.getElementById('log');el.textContent+=(new Date().toLocaleTimeString())+' '+t+'\n';el.scrollTop=el.scrollHeight;}
+var bleDev=null, bleChar=null, sendQ=null;
+var SERVICE_UUID='c6372234-79d6-4a5e-8a57-08a3b7a8a7d1';
+var CHAR_UUID='f6c8d747-fc2c-4ef4-906a-7c8cbf552814';
+function setBleSt(t){document.getElementById('espSt').textContent=t;}
+async function bleConnect(){
+  try{
+    if(!navigator.bluetooth){setBleSt('kein WebBluetooth – Bluefy/Chrome nötig');log('ERR kein navigator.bluetooth');return;}
+    log('Suche SteedPilot ...');
+    bleDev=await navigator.bluetooth.requestDevice({filters:[{services:[SERVICE_UUID]}]});
+    bleDev.addEventListener('gattserverdisconnected',function(){bleChar=null;setBleSt('getrennt');log('BLE getrennt');});
+    var srv=await bleDev.gatt.connect();
+    var svc=await srv.getPrimaryService(SERVICE_UUID);
+    bleChar=await svc.getCharacteristic(CHAR_UUID);
+    setBleSt('verbunden: '+bleDev.name);log('BLE verbunden');
+    postNav({v:1,type:'heartbeat'});
+  }catch(e){setBleSt('Fehler');log('ERR '+e);}
+}
+async function bleDisconnect(){try{if(bleDev&&bleDev.gatt.connected)bleDev.gatt.disconnect();}catch(e){}bleChar=null;setBleSt('getrennt');}
+// GATT-MTU ist klein -> JSON in 20-Byte-Stücke, ESP setzt via { }-Zählung zusammen.
+async function bleWrite(json){
+  if(!bleChar){log('BLE nicht verbunden');return false;}
+  try{
+    var b=new TextEncoder().encode(json);
+    for(var i=0;i<b.length;i+=20){await bleChar.writeValueWithoutResponse(b.slice(i,i+20));}
+    log('-> ESP BLE '+b.length+' B '+json);
+    return true;
+  }catch(e){log('ERR '+e);bleChar=null;setBleSt('getrennt');return false;}
+}
+function postNav(o){sendQ=(sendQ||Promise.resolve()).then(function(){return bleWrite(JSON.stringify(o));});return sendQ;}
+function sendHb(){postNav({v:1,type:'heartbeat'});}
+function sendDemo(man,dist,spd,lim){postNav({v:1,type:'state',mode:'navigation',maneuver:man,distanceToManeuverMeters:dist,currentSpeed:spd,speedLimit:lim,speedUnit:'kph'});}
+
+// ---- GPX ----
+document.getElementById('gpxFile').addEventListener('change',function(e){
+  var f=e.target.files[0];if(!f)return;
+  var rd=new FileReader();
+  rd.onload=function(){try{loadTrack(parseGpx(rd.result),f.name);}catch(err){log('GPX ERR '+err);}};
+  rd.readAsText(f);
+});
+function parseGpx(text){
+  var xml=new DOMParser().parseFromString(text,'application/xml');
+  var pts=xml.querySelectorAll('trkpt');
+  if(pts.length===0)pts=xml.querySelectorAll('rtept');
+  if(pts.length===0)pts=xml.querySelectorAll('wpt');
+  var out=[];
+  for(var i=0;i<pts.length;i++){out.push({lat:+pts[i].getAttribute('lat'),lon:+pts[i].getAttribute('lon')});}
+  if(out.length<2)throw 'keine Trackpunkte gefunden';
+  return out;
+}
+function loadTrack(pts,name){
+  track=pts;buildCum();buildTurns();drawTrack();
+  try{localStorage.setItem('hudTrack',JSON.stringify(pts.slice(0,5000)));}catch(e){}
+  document.getElementById('gpxInfo').textContent=name+': '+pts.length+' Pkt, '+turns.length+' Abbiegungen, '+(cum[cum.length-1]/1000).toFixed(1)+' km';
+  log('GPX geladen: '+pts.length+' Punkte, '+turns.length+' Manöver');
+}
+function clearGpx(){track=[];cum=[];turns=[];if(trackLayer){map.removeLayer(trackLayer);trackLayer=null;}document.getElementById('gpxInfo').textContent='keine Route';}
+(function restore(){try{var s=localStorage.getItem('hudTrack');if(s){var p=JSON.parse(s);if(p&&p.length>1)loadTrack(p,'gespeichert');}}catch(e){}})();
+
+// ---- Geo-Mathe ----
+function hav(a,b){var R=6371000,t=Math.PI/180;var dLa=(b.lat-a.lat)*t,dLo=(b.lon-a.lon)*t;var s=Math.sin(dLa/2)**2+Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(s));}
+function bear(a,b){var t=Math.PI/180;var dLo=(b.lon-a.lon)*t;var y=Math.sin(dLo)*Math.cos(b.lat*t);var x=Math.cos(a.lat*t)*Math.sin(b.lat*t)-Math.sin(a.lat*t)*Math.cos(b.lat*t)*Math.cos(dLo);return (Math.atan2(y,x)/t+360)%360;}
+function normDeg(d){while(d>180)d-=360;while(d<-180)d+=360;return d;}
+function buildCum(){cum=[0];for(var i=1;i<track.length;i++)cum.push(cum[i-1]+hav(track[i-1],track[i]));}
+function manFromAngle(d){var a=Math.abs(d);if(a<25)return null;var side=d>0?'Right':'Left';if(a<45)return 'slight'+side;if(a<110)return 'turn'+side;if(a<160)return 'sharp'+side;return 'uTurn';}
+function buildTurns(){
+  turns=[];var L=3;
+  for(var i=1;i<track.length-1-L;i++){
+    var b1=bear(track[i-1],track[i]);
+    var j=Math.min(i+L,track.length-1);
+    var b2=bear(track[i],track[j]);
+    var d=normDeg(b2-b1);
+    var m=manFromAngle(d);
+    if(m)turns.push({idx:i,man:m,deg:Math.round(d)});
+  }
+  // Ausdünnen: mind. 60 m Abstand, größter Winkel gewinnt
+  var thin=[];
+  for(var k=0;k<turns.length;k++){
+    var t=turns[k];
+    if(thin.length===0||cum[t.idx]-cum[thin[thin.length-1].idx]>60)thin.push(t);
+    else if(Math.abs(t.deg)>Math.abs(thin[thin.length-1].deg))thin[thin.length-1]=t;
+  }
+  turns=thin;
+}
+function drawTrack(){
+  if(trackLayer)map.removeLayer(trackLayer);
+  var ll=track.map(function(p){return [p.lat,p.lon];});
+  trackLayer=L.polyline(ll,{color:'blue'}).addTo(map);
+  map.fitBounds(trackLayer.getBounds());
+}
+function nearestIdx(lat,lon){
+  var best=0,bd=1e18;var p={lat:lat,lon:lon};
+  for(var i=0;i<track.length;i++){var d=hav(p,track[i]);if(d<bd){bd=d;best=i;}}
+  return {idx:best,off:bd};
+}
+
+// ---- Speed-Limit via Overpass (best effort) ----
+async function lookupLimit(lat,lon){
+  var now=Date.now();
+  if(now-lastOverpass<15000)return;
+  lastOverpass=now;
+  try{
+    var q='[out:json];way(around:30,'+lat.toFixed(5)+','+lon.toFixed(5)+')[maxspeed];out tags 5;';
+    var r=await fetch('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q));
+    var j=await r.json();
+    if(j.elements&&j.elements.length){
+      for(var i=0;i<j.elements.length;i++){
+        var ms=j.elements[i].tags&&j.elements[i].tags.maxspeed;
+        if(ms){var m=/(\d+)/.exec(ms);if(m){curLimit=+m[1];log('Limit auto: '+curLimit);return;}}
+      }
+    }
+  }catch(e){/* offline -> manuell */}
+}
+
+// ---- Navigation ----
+function startNav(){
+  if(!navigator.geolocation){log('Kein Geolocation (Safari braucht HTTPS!)');return;}
+  if(track.length<2){log('Bitte zuerst GPX laden (oder Demo nutzen)');}
+  curLimit=+document.getElementById('manLimit').value||50;
+  watchId=navigator.geolocation.watchPosition(onPos,function(e){log('GPS ERR '+e.message);},{enableHighAccuracy:true,maximumAge:1000,timeout:10000});
+  sendTimer=setInterval(sendTick,2000);
+  hbTimer=setInterval(function(){postNav({v:1,type:'heartbeat'});},8000);
+  log('Nav gestartet');
+}
+function stopNav(){
+  if(watchId!==null)navigator.geolocation.clearWatch(watchId);
+  watchId=null;
+  if(sendTimer)clearInterval(sendTimer);
+  if(hbTimer)clearInterval(hbTimer);
+  log('Nav gestoppt');
+}
+function onPos(p){
+  var lat=p.coords.latitude,lon=p.coords.longitude;
+  var now=Date.now();
+  if(p.coords.speed!=null&&p.coords.speed>=0)curSpeedKph=p.coords.speed*3.6;
+  else if(lastPos){var dt=(now-lastPosTime)/1000;if(dt>0)curSpeedKph=Math.min(200,hav(lastPos,{lat:lat,lon:lon})/dt*3.6);}
+  lastPos={lat:lat,lon:lon};lastPosTime=now;
+  if(posMarker)posMarker.setLatLng([lat,lon]);else posMarker=L.marker([lat,lon]).addTo(map).bindPopup('GPS');
+  if(document.getElementById('autoLimit').checked)lookupLimit(lat,lon);
+  else curLimit=+document.getElementById('manLimit').value||50;
+  document.getElementById('nSpd').textContent=Math.round(curSpeedKph);
+  document.getElementById('nLim').textContent=curLimit;
+}
+function sendTick(){
+  if(!lastPos){return;}
+  var man='continue',dist=0;
+  if(track.length>1){
+    var n=nearestIdx(lastPos.lat,lastPos.lon);
+    var ahead=null;
+    for(var i=0;i<turns.length;i++){var dd=cum[turns[i].idx]-cum[n.idx];if(dd>8){ahead=turns[i];dist=Math.round(dd);break;}}
+    if(ahead){man=ahead.man;if(turnMarker)turnMarker.setLatLng([track[ahead.idx].lat,track[ahead.idx].lon]);else turnMarker=L.marker([track[ahead.idx].lat,track[ahead.idx].lon]).addTo(map).bindPopup('Abzweig');}
+    else{man='continue';dist=0;}
+  }
+  document.getElementById('nMan').textContent=man;
+  document.getElementById('nDist').textContent=dist>=1000?(dist/1000).toFixed(1)+' km':dist+' m';
+  var key=man+'|'+(Math.round(dist/25)*25);
+  if(key!==lastNextKey){lastNextKey=key;postNav({v:1,type:'state',mode:'navigation',maneuver:man,distanceToManeuverMeters:dist,currentSpeed:Math.round(curSpeedKph),speedLimit:curLimit,speedUnit:'kph'});}
+  else{postNav({v:1,type:'update',distanceToManeuverMeters:dist,currentSpeed:Math.round(curSpeedKph),speedLimit:curLimit});}
+}
+</script>
+</body></html>
