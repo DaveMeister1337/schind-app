@@ -1,260 +1,224 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HUD Nav – Web-App</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MotoNav Planner</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-body{font-family:system-ui,sans-serif;margin:12px;max-width:900px}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
-input,select,button{padding:8px;font-size:15px}
-#map{height:320px;margin:8px 0}
-#log{background:#111;color:#0f0;padding:8px;min-height:100px;white-space:pre-wrap;font-size:12px}
-.card{border:1px solid #ccc;border-radius:8px;padding:10px;margin:8px 0}
-.big{font-size:22px;font-weight:bold}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e5e7eb;
+         display: flex; flex-direction: column; height: 100vh; }
+  header { padding: .5rem .8rem; background: #0b122b; border-bottom: 1px solid #1f2937; }
+  header h1 { font-size: 1.1rem; }
+  header p { font-size: .8rem; color: #9ca3af; }
+  main { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: .5rem; padding: .5rem; }
+  #map { flex: 1; min-height: 40vh; border-radius: .5rem; border: 1px solid #1f2937; }
+  #panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+           gap: .5rem; overflow: auto; max-height: 52vh; }
+  .card { background: #111827; border: 1px solid #1f2937; border-radius: .5rem;
+          padding: .6rem .75rem; display: flex; flex-direction: column; gap: .5rem; }
+  .card h2 { font-size: 1rem; }
+  .small { font-size: .85rem; color: #9ca3af; }
+  input[type=text] { background: #0b122b; color: #e5e7eb; border: 1px solid #334155;
+                     border-radius: .4rem; padding: .35rem .45rem; width: 100%; }
+  .btnrow { display: flex; flex-wrap: wrap; gap: .4rem; }
+  button { background: #0b122b; color: #e5e7eb; border: 1px solid #334155;
+           border-radius: .45rem; padding: .4rem .6rem; cursor: pointer; }
+  button.ok { border-color: #22c55e; }
+  #log { background: #070b14; border: 1px solid #1f2937; border-radius: .4rem;
+         padding: .4rem .5rem; max-height: 120px; overflow: auto;
+         font-family: monospace; font-size: .8rem; white-space: pre-wrap; }
+  code { background: rgba(255,255,255,.08); padding: .05rem .25rem; border-radius: .25rem; }
+  @media (orientation: landscape) and (min-width: 900px) {
+    main { flex-direction: row; } #map { width: 60%; } #panel { width: 40%; max-height: none; }
+  }
 </style>
 </head>
 <body>
-<h2>HUD Nav – Web-App (SteedPilot-JSON via Bluetooth)</h2>
-
-<div class="card">
-<h3>1. ESP per Bluetooth verbinden</h3>
-<div class="row">
-<button onclick="bleConnect()">Verbinden (SteedPilot)</button>
-<button onclick="bleDisconnect()">Trennen</button>
-<span id="espSt">getrennt</span>
-</div>
-<div class="row"><small>Desktop/Android: Chrome oder Edge. iPhone: <b>Bluefy-Browser</b> (Safari kann kein WebBluetooth). Datei per HTTPS hosten (z. B. GitHub Pages), dann Bluetooth + GPS freigeben. Alternativ: nRF Connect App (manuell) oder SteedPilot-App (Mac/Xcode-Build).</small></div>
-</div>
-
-<div class="card">
-<h3>2. GPX-Route laden (vom PC)</h3>
-<div class="row">
-<input id="gpxFile" type="file" accept=".gpx">
-<button onclick="clearGpx()">Löschen</button>
-<span id="gpxInfo">keine Route</span>
-</div>
-<div id="map"></div>
-</div>
-
-<div class="card">
-<h3>3. Navigation</h3>
-<div class="row">
-<button onclick="startNav()">Start (GPS)</button>
-<button onclick="stopNav()">Stopp</button>
-<label><input id="autoLimit" type="checkbox" checked> Speed-Limit auto (Overpass)</label>
-<input id="manLimit" type="number" value="50" min="0" max="200" style="width:80px"> Limit manuell
-</div>
-<div class="row">
-<div>Nächster: <span class="big" id="nMan">–</span></div>
-<div>Distanz: <span class="big" id="nDist">–</span></div>
-<div>Speed: <span class="big" id="nSpd">–</span> km/h</div>
-<div>Limit: <span class="big" id="nLim">–</span></div>
-</div>
-</div>
-
-<div class="card">
-<h3>4. Demo (ohne GPS)</h3>
-<div class="row">
-<button onclick="sendHb()">Heartbeat</button>
-<button onclick="sendDemo('turnLeft',180,45,50)">Links 180 m</button>
-<button onclick="sendDemo('turnRight',120,42,50)">Rechts 120 m</button>
-<button onclick="sendDemo('roundabout',260,35,50)">Kreisverkehr</button>
-<button onclick="sendDemo('uTurn',90,15,30)">U-Turn</button>
-<button onclick="sendDemo('arrive',0,0,50)">Ankunft</button>
-</div>
-</div>
-
-<div class="card"><h3>Log</h3>
-<div class="row">
-<button id="logBtn" onclick="toggleLog()">Live-Logs: an</button>
-<button onclick="clearLog()">Leeren</button>
-</div>
-<div id="log"></div></div>
-
+<header>
+  <h1>MotoNav Planner</h1>
+  <p>Route planen → per Cloud ans Motorrad-Display senden. Diese Seite läuft auf GitHub Pages (nur Internet nötig).</p>
+</header>
+<main>
+  <div id="map"></div>
+  <div id="panel">
+    <section class="card">
+      <h2>1. Device-ID</h2>
+      <input type="text" id="devId" placeholder="z.B. AB12 (steht auf dem Display)" maxlength="4" />
+      <p class="small">Einmal eintragen, wird im Browser gespeichert. ntfy-Topic: <code id="topicPrev">motonav-…</code></p>
+    </section>
+    <section class="card">
+      <h2>2. Route planen</h2>
+      <div class="btnrow">
+        <input type="text" id="search" placeholder="Ort suchen (Enter)" style="flex:1" />
+      </div>
+      <p class="small">Oder: auf die Karte tippen = Wegpunkt anhängen. Letzter Punkt = Ziel.</p>
+      <div class="btnrow">
+        <button id="btnRoute">Route berechnen (OSRM)</button>
+        <button id="btnUndo">Letzter Punkt weg</button>
+        <button id="btnClearPts">Punkte löschen</button>
+      </div>
+      <div id="routeInfo" class="small">Noch keine Route.</div>
+    </section>
+    <section class="card">
+      <h2>3. oder GPX laden</h2>
+      <input type="file" id="gpxFile" accept=".gpx" />
+      <div class="btnrow"><button id="btnLoadGpx">GPX übernehmen</button></div>
+      <div id="gpxInfo" class="small">trkpt/rtept werden übernommen.</div>
+    </section>
+    <section class="card">
+      <h2>4. Ans Display senden</h2>
+      <div class="btnrow"><button id="btnSend">Route senden (ntfy-Cloud)</button></div>
+      <div id="sendInfo" class="small">Der ESP holt die Route alle ~12s selbst ab. Tab kann danach zu.</div>
+      <pre id="log"></pre>
+    </section>
+  </div>
+</main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-var map = L.map('map').setView([51.16, 10.45], 6);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
-var trackLayer = null, posMarker = null, turnMarker = null;
+// ---------- Karte ----------
+const map = L.map("map").setView([50.8, 10.0], 6);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
 
-var track = [];      // {lat,lon}
-var cum = [];        // kumulierte Meter
-var turns = [];      // {idx,man,deg}
-var watchId = null, sendTimer = null, hbTimer = null;
-var lastPos = null, lastPosTime = 0;
-var curSpeedKph = 0, curLimit = 50, lastNextKey = '', lastOverpass = 0;
-
-var liveLog=true, skippedLog=0;
-function toggleLog(){liveLog=!liveLog;document.getElementById('logBtn').textContent='Live-Logs: '+(liveLog?'an':'aus');if(liveLog&&skippedLog>0){skippedLog=0;log('... weiter');}}
-function clearLog(){document.getElementById('log').textContent='';skippedLog=0;}
-function log(t){
-  if(!liveLog){skippedLog++;return;}
-  var el=document.getElementById('log');
-  el.textContent+=(new Date().toLocaleTimeString())+' '+t+'\n';
-  // Deckel: nur letzte ~200 Zeilen behalten, DOM bleibt klein.
-  var lines=el.textContent.split('\n');
-  if(lines.length>201)el.textContent=lines.slice(lines.length-201).join('\n');
-  el.scrollTop=el.scrollHeight;
+let wpMarkers = [], wpLatLngs = [], routeLine = null, routePts = []; // [lat,lon]
+function log(s) {
+  const el = document.getElementById("log");
+  el.textContent += `[${new Date().toLocaleTimeString()}] ${s}\n`;
+  el.scrollTop = el.scrollHeight;
 }
-var bleDev=null, bleChar=null, sendQ=null;
-var SERVICE_UUID='c6372234-79d6-4a5e-8a57-08a3b7a8a7d1';
-var CHAR_UUID='f6c8d747-fc2c-4ef4-906a-7c8cbf552814';
-function setBleSt(t){document.getElementById('espSt').textContent=t;}
-async function bleConnect(){
-  try{
-    if(!navigator.bluetooth){setBleSt('kein WebBluetooth – Bluefy/Chrome nötig');log('ERR kein navigator.bluetooth');return;}
-    log('Suche SteedPilot ...');
-    bleDev=await navigator.bluetooth.requestDevice({filters:[{services:[SERVICE_UUID]}]});
-    bleDev.addEventListener('gattserverdisconnected',function(){bleChar=null;setBleSt('getrennt');log('BLE getrennt');});
-    var srv=await bleDev.gatt.connect();
-    var svc=await srv.getPrimaryService(SERVICE_UUID);
-    bleChar=await svc.getCharacteristic(CHAR_UUID);
-    setBleSt('verbunden: '+bleDev.name);log('BLE verbunden');
-    postNav({v:1,type:'heartbeat'});
-  }catch(e){setBleSt('Fehler');log('ERR '+e);}
-}
-async function bleDisconnect(){try{if(bleDev&&bleDev.gatt.connected)bleDev.gatt.disconnect();}catch(e){}bleChar=null;setBleSt('getrennt');}
-// GATT-MTU ist klein -> JSON in 20-Byte-Stücke, ESP setzt via { }-Zählung zusammen.
-async function bleWrite(json){
-  if(!bleChar){log('BLE nicht verbunden');return false;}
-  try{
-    var b=new TextEncoder().encode(json);
-    for(var i=0;i<b.length;i+=20){await bleChar.writeValueWithoutResponse(b.slice(i,i+20));}
-    log('-> ESP BLE '+b.length+' B '+json);
-    return true;
-  }catch(e){log('ERR '+e);bleChar=null;setBleSt('getrennt');return false;}
-}
-function postNav(o){sendQ=(sendQ||Promise.resolve()).then(function(){return bleWrite(JSON.stringify(o));});return sendQ;}
-function sendHb(){postNav({v:1,type:'heartbeat'});}
-function sendDemo(man,dist,spd,lim){postNav({v:1,type:'state',mode:'navigation',maneuver:man,distanceToManeuverMeters:dist,currentSpeed:spd,speedLimit:lim,speedUnit:'kph'});}
-
-// ---- GPX ----
-document.getElementById('gpxFile').addEventListener('change',function(e){
-  var f=e.target.files[0];if(!f)return;
-  var rd=new FileReader();
-  rd.onload=function(){try{loadTrack(parseGpx(rd.result),f.name);}catch(err){log('GPX ERR '+err);}};
-  rd.readAsText(f);
+map.on("click", (e) => {
+  wpLatLngs.push(e.latlng);
+  const m = L.marker(e.latlng, { draggable: true }).addTo(map);
+  m.on("dragend", () => { wpLatLngs[wpMarkers.indexOf(m)] = m.getLatLng(); });
+  wpMarkers.push(m);
+  log(`Punkt ${wpLatLngs.length}: ${e.latlng.lat.toFixed(5)},${e.latlng.lng.toFixed(5)}`);
 });
-function parseGpx(text){
-  var xml=new DOMParser().parseFromString(text,'application/xml');
-  var pts=xml.querySelectorAll('trkpt');
-  if(pts.length===0)pts=xml.querySelectorAll('rtept');
-  if(pts.length===0)pts=xml.querySelectorAll('wpt');
-  var out=[];
-  for(var i=0;i<pts.length;i++){out.push({lat:+pts[i].getAttribute('lat'),lon:+pts[i].getAttribute('lon')});}
-  if(out.length<2)throw 'keine Trackpunkte gefunden';
+document.getElementById("btnUndo").onclick = () => {
+  map.removeLayer(wpMarkers.pop()); wpLatLngs.pop();
+};
+document.getElementById("btnClearPts").onclick = () => {
+  wpMarkers.forEach(m => map.removeLayer(m)); wpMarkers = []; wpLatLngs = [];
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+  routePts = [];
+  document.getElementById("routeInfo").textContent = "Noch keine Route.";
+};
+document.getElementById("search").addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter") return;
+  const q = e.target.value;
+  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`);
+  const j = await r.json();
+  if (j.length) {
+    map.setView([+j[0].lat, +j[0].lon], 13);
+    log(`Gefunden: ${j[0].display_name.slice(0, 80)}`);
+  } else log("Nichts gefunden.");
+});
+
+// ---------- OSRM ----------
+document.getElementById("btnRoute").onclick = async () => {
+  if (wpLatLngs.length < 2) { alert("Mind. Start + Ziel antippen"); return; }
+  const coords = wpLatLngs.map(p => `${p.lng.toFixed(5)},${p.lat.toFixed(5)}`).join(";");
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+  log("OSRM fragt...");
+  const r = await fetch(url);
+  const j = await r.json();
+  if (j.code !== "Ok") { log("OSRM-Fehler: " + j.code); return; }
+  const g = j.routes[0].geometry.coordinates; // [lon,lat]
+  routePts = g.map(c => [c[1], c[0]]);
+  if (routeLine) map.removeLayer(routeLine);
+  routeLine = L.polyline(routePts, { color: "#38bdf8", weight: 4 }).addTo(map);
+  map.fitBounds(routeLine.getBounds());
+  const km = (j.routes[0].distance / 1000).toFixed(1);
+  const min = Math.round(j.routes[0].duration / 60);
+  document.getElementById("routeInfo").textContent =
+    `Route: ${routePts.length} Punkte, ${km} km, ca. ${min} min`;
+  log(`Route ok: ${routePts.length} Punkte`);
+};
+
+// ---------- GPX ----------
+document.getElementById("btnLoadGpx").onclick = () => {
+  const f = document.getElementById("gpxFile").files[0];
+  if (!f) { alert("GPX wählen"); return; }
+  const r = new FileReader();
+  r.onload = (e) => {
+    const xml = new DOMParser().parseFromString(e.target.result, "text/xml");
+    let pts = xml.getElementsByTagName("trkpt");
+    if (!pts.length) pts = xml.getElementsByTagName("rtept");
+    routePts = [];
+    for (const p of pts) {
+      const la = parseFloat(p.getAttribute("lat")), lo = parseFloat(p.getAttribute("lon"));
+      if (isFinite(la) && isFinite(lo)) routePts.push([la, lo]);
+    }
+    if (routePts.length > 2500) routePts = thin(routePts, 2500);
+    if (routeLine) map.removeLayer(routeLine);
+    routeLine = L.polyline(routePts, { color: "#38bdf8", weight: 4 }).addTo(map);
+    map.fitBounds(routeLine.getBounds());
+    document.getElementById("gpxInfo").textContent = `GPX: ${routePts.length} Punkte`;
+    log(`GPX ok: ${routePts.length} Punkte`);
+  };
+  r.readAsText(f);
+};
+// simples Ausdünnen (jede n-te behalten)
+function thin(pts, max) {
+  const step = Math.ceil(pts.length / max), out = [];
+  for (let i = 0; i < pts.length; i += step) out.push(pts[i]);
+  if (out[out.length-1] !== pts[pts.length-1]) out.push(pts[pts.length-1]);
   return out;
 }
-function loadTrack(pts,name){
-  track=pts;buildCum();buildTurns();drawTrack();
-  try{localStorage.setItem('hudTrack',JSON.stringify(pts.slice(0,5000)));}catch(e){}
-  document.getElementById('gpxInfo').textContent=name+': '+pts.length+' Pkt, '+turns.length+' Abbiegungen, '+(cum[cum.length-1]/1000).toFixed(1)+' km';
-  log('GPX geladen: '+pts.length+' Punkte, '+turns.length+' Manöver');
-}
-function clearGpx(){track=[];cum=[];turns=[];if(trackLayer){map.removeLayer(trackLayer);trackLayer=null;}document.getElementById('gpxInfo').textContent='keine Route';}
-(function restore(){try{var s=localStorage.getItem('hudTrack');if(s){var p=JSON.parse(s);if(p&&p.length>1)loadTrack(p,'gespeichert');}}catch(e){}})();
 
-// ---- Geo-Mathe ----
-function hav(a,b){var R=6371000,t=Math.PI/180;var dLa=(b.lat-a.lat)*t,dLo=(b.lon-a.lon)*t;var s=Math.sin(dLa/2)**2+Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(s));}
-function bear(a,b){var t=Math.PI/180;var dLo=(b.lon-a.lon)*t;var y=Math.sin(dLo)*Math.cos(b.lat*t);var x=Math.cos(a.lat*t)*Math.sin(b.lat*t)-Math.sin(a.lat*t)*Math.cos(b.lat*t)*Math.cos(dLo);return (Math.atan2(y,x)/t+360)%360;}
-function normDeg(d){while(d>180)d-=360;while(d<-180)d+=360;return d;}
-function buildCum(){cum=[0];for(var i=1;i<track.length;i++)cum.push(cum[i-1]+hav(track[i-1],track[i]));}
-function manFromAngle(d){var a=Math.abs(d);if(a<25)return null;var side=d>0?'Right':'Left';if(a<45)return 'slight'+side;if(a<110)return 'turn'+side;if(a<160)return 'sharp'+side;return 'uTurn';}
-function buildTurns(){
-  turns=[];var L=3;
-  for(var i=1;i<track.length-1-L;i++){
-    var b1=bear(track[i-1],track[i]);
-    var j=Math.min(i+L,track.length-1);
-    var b2=bear(track[i],track[j]);
-    var d=normDeg(b2-b1);
-    var m=manFromAngle(d);
-    if(m)turns.push({idx:i,man:m,deg:Math.round(d)});
+// ---------- Polyline6 Encode ----------
+function encPolyline(pts, prec) {
+  let f = 1; for (let i = 0; i < prec; i++) f *= 10;
+  let la = 0, lo = 0, out = "";
+  const enc = (v) => {
+    v = v < 0 ? ~(v << 1) : (v << 1);
+    while (v >= 32) { out += String.fromCharCode((32 | (v & 31)) + 63); v >>= 5; }
+    out += String.fromCharCode(v + 63);
+  };
+  for (const [a, o] of pts) {
+    const la2 = Math.round(a * f), lo2 = Math.round(o * f);
+    enc(la2 - la); enc(lo2 - lo); la = la2; lo = lo2;
   }
-  // Ausdünnen: mind. 60 m Abstand, größter Winkel gewinnt
-  var thin=[];
-  for(var k=0;k<turns.length;k++){
-    var t=turns[k];
-    if(thin.length===0||cum[t.idx]-cum[thin[thin.length-1].idx]>60)thin.push(t);
-    else if(Math.abs(t.deg)>Math.abs(thin[thin.length-1].deg))thin[thin.length-1]=t;
-  }
-  turns=thin;
-}
-function drawTrack(){
-  if(trackLayer)map.removeLayer(trackLayer);
-  var ll=track.map(function(p){return [p.lat,p.lon];});
-  trackLayer=L.polyline(ll,{color:'blue'}).addTo(map);
-  map.fitBounds(trackLayer.getBounds());
-}
-function nearestIdx(lat,lon){
-  var best=0,bd=1e18;var p={lat:lat,lon:lon};
-  for(var i=0;i<track.length;i++){var d=hav(p,track[i]);if(d<bd){bd=d;best=i;}}
-  return {idx:best,off:bd};
+  return out;
 }
 
-// ---- Speed-Limit via Overpass (best effort) ----
-async function lookupLimit(lat,lon){
-  var now=Date.now();
-  if(now-lastOverpass<15000)return;
-  lastOverpass=now;
-  try{
-    var q='[out:json];way(around:30,'+lat.toFixed(5)+','+lon.toFixed(5)+')[maxspeed];out tags 5;';
-    var r=await fetch('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q));
-    var j=await r.json();
-    if(j.elements&&j.elements.length){
-      for(var i=0;i<j.elements.length;i++){
-        var ms=j.elements[i].tags&&j.elements[i].tags.maxspeed;
-        if(ms){var m=/(\d+)/.exec(ms);if(m){curLimit=+m[1];log('Limit auto: '+curLimit);return;}}
-      }
-    }
-  }catch(e){/* offline -> manuell */}
-}
+// ---------- Device-ID + Senden via ntfy ----------
+const devEl = document.getElementById("devId");
+devEl.value = localStorage.getItem("motonav_id") || "";
+const updTopic = () =>
+  document.getElementById("topicPrev").textContent =
+    "motonav-" + (devEl.value.trim().toLowerCase() || "…");
+devEl.oninput = () => {
+  localStorage.setItem("motonav_id", devEl.value.trim().toUpperCase());
+  updTopic();
+};
+updTopic();
 
-// ---- Navigation ----
-function startNav(){
-  if(!navigator.geolocation){log('Kein Geolocation (Safari braucht HTTPS!)');return;}
-  if(track.length<2){log('Bitte zuerst GPX laden (oder Demo nutzen)');}
-  curLimit=+document.getElementById('manLimit').value||50;
-  watchId=navigator.geolocation.watchPosition(onPos,function(e){log('GPS ERR '+e.message);},{enableHighAccuracy:true,maximumAge:1000,timeout:10000});
-  sendTimer=setInterval(sendTick,2000);
-  hbTimer=setInterval(function(){postNav({v:1,type:'heartbeat'});},8000);
-  log('Nav gestartet');
-}
-function stopNav(){
-  if(watchId!==null)navigator.geolocation.clearWatch(watchId);
-  watchId=null;
-  if(sendTimer)clearInterval(sendTimer);
-  if(hbTimer)clearInterval(hbTimer);
-  log('Nav gestoppt');
-}
-function onPos(p){
-  var lat=p.coords.latitude,lon=p.coords.longitude;
-  var now=Date.now();
-  if(p.coords.speed!=null&&p.coords.speed>=0)curSpeedKph=p.coords.speed*3.6;
-  else if(lastPos){var dt=(now-lastPosTime)/1000;if(dt>0)curSpeedKph=Math.min(200,hav(lastPos,{lat:lat,lon:lon})/dt*3.6);}
-  lastPos={lat:lat,lon:lon};lastPosTime=now;
-  if(posMarker)posMarker.setLatLng([lat,lon]);else posMarker=L.marker([lat,lon]).addTo(map).bindPopup('GPS');
-  if(document.getElementById('autoLimit').checked)lookupLimit(lat,lon);
-  else curLimit=+document.getElementById('manLimit').value||50;
-  document.getElementById('nSpd').textContent=Math.round(curSpeedKph);
-  document.getElementById('nLim').textContent=curLimit;
-}
-function sendTick(){
-  if(!lastPos){return;}
-  var man='continue',dist=0;
-  if(track.length>1){
-    var n=nearestIdx(lastPos.lat,lastPos.lon);
-    var ahead=null;
-    for(var i=0;i<turns.length;i++){var dd=cum[turns[i].idx]-cum[n.idx];if(dd>8){ahead=turns[i];dist=Math.round(dd);break;}}
-    if(ahead){man=ahead.man;if(turnMarker)turnMarker.setLatLng([track[ahead.idx].lat,track[ahead.idx].lon]);else turnMarker=L.marker([track[ahead.idx].lat,track[ahead.idx].lon]).addTo(map).bindPopup('Abzweig');}
-    else{man='continue';dist=0;}
-  }
-  document.getElementById('nMan').textContent=man;
-  document.getElementById('nDist').textContent=dist>=1000?(dist/1000).toFixed(1)+' km':dist+' m';
-  var key=man+'|'+(Math.round(dist/25)*25);
-  if(key!==lastNextKey){lastNextKey=key;postNav({v:1,type:'state',mode:'navigation',maneuver:man,distanceToManeuverMeters:dist,currentSpeed:Math.round(curSpeedKph),speedLimit:curLimit,speedUnit:'kph'});}
-  else{postNav({v:1,type:'update',distanceToManeuverMeters:dist,currentSpeed:Math.round(curSpeedKph),speedLimit:curLimit});}
-}
+document.getElementById("btnSend").onclick = async (ev) => {
+  const id = devEl.value.trim().toLowerCase();
+  if (!/^[0-9a-f]{4}$/i.test(id)) { alert("Device-ID = 4 Hex-Zeichen vom Display (z.B. AB12)"); return; }
+  if (routePts.length < 2) { alert("Erst Route berechnen oder GPX laden"); return; }
+  const dest = routePts[routePts.length - 1];
+  const payload = {
+    track: encPolyline(routePts.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]), 6),
+    precision: 6,
+    dest: [+dest[0].toFixed(5), +dest[1].toFixed(5)],
+    name: `Tour ${new Date().toLocaleString()}`,
+  };
+  log(`Sende ${routePts.length} Punkte (${payload.track.length} Zeichen) an motonav-${id}...`);
+  try {
+    const r = await fetch(`https://ntfy.sh/motonav-${id}`, {
+      method: "POST", body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    ev.target.classList.add("ok");
+    setTimeout(() => ev.target.classList.remove("ok"), 1200);
+    document.getElementById("sendInfo").textContent =
+      "Gesendet! ESP holt die Route in ~12s ab (Hotspot muss an sein). Tab kann zu.";
+    log("Gesendet. Fertig.");
+  } catch (e) { log("Senden fehlgeschlagen: " + e); }
+};
 </script>
-</body></html>
+</body>
+</html>
